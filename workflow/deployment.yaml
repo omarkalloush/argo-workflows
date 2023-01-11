@@ -1,0 +1,9 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  namespace: argo
+  generateName: deployment-
+spec:
+  WorkflowTemplateRef:
+    name: deployment
+    clusterScope: false
