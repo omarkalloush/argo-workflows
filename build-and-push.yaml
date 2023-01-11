@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: build-and-push
+spec:
+  serviceaccountName: argo
+  entrypoint: build-and-push
+  templates:
+    - name: build-and-push
+      container:
+        image: omarkalloush/deployment-container:latest
+        securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
+              readOnlyRootFilesystem: false
+        command: [sh, -c]
+        args:
+          - |-
+              until git clone https://ArgoCloudDeployer:$(cat /tmp/github-creds/password)@github.com/omarkalloush/node-app.git; do sleep 3; done;
+
+              cd node-app
+              ls -la
+
+              gh auth login --with-token < /tmp/github-creds/password
+              gh auth setup-git
+              git config user.name "ArgoCloudDeployer"
+              git config user.email "amr8210301@ju.edu.jo"
+              GIT_COMMIT_SHORT_HASH=$(git log -1 --format="%h")
+
+              until docker ps; do sleep 3; done;
+              docker build -t omarkalloush/node_app:${GIT_COMMIT_SHORT_HASH} .
+              docker images
+              docker login -u "$(cat /tmp/docker-creds/username)" -p "$(cat /tmp/docker-creds/password)" docker.io
+              docker push omarkalloush/node_app:${GIT_COMMIT_SHORT_HASH}
+
+              IMAGE_TAG=$(echo "omarkalloush/node_app:${GIT_COMMIT_SHORT_HASH}")
+              echo "${GIT_COMMIT_SHORT_HASH}" > /tmp/image-tag
+              echo "${IMAGE_TAG} is pushed"
+
+        env:
+          - name: DOCKER_HOST
+            value: 127.0.0.1:2375
+
+        volumeMounts:
+        - name: github-creds
+          mountPath: /tmp/github-creds
+        - name: docker-creds
+          mountPath: /tmp/docker-creds
+      volumes:
+      - name: github-creds
+        secret:
+          secretName: github-creds
+      - name: docker-creds
+        secret:
+          secretName: docker-creds
+
+      outputs:
+        parameters:
+          - name: image-tag
+            valueFrom:
+              path: /tmp/image-tag
+
+      sidecars:
+        - name: dind
+          image: docker:20.10.18-dind
+          command: [dockerd-entrypoint.sh]
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+            - name: DOCKER_HOST
+              value: 127.0.0.1:2375
+          securityContext:
+            privileged: true
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+          mirrorVolumeMounts: true

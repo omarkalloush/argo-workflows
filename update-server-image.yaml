@@ -1,0 +1,60 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: update-server-image
+spec:
+  serviceaccountName: argo
+  entrypoint: update-server-image
+  arguments:
+    parameters:
+      - name: image-tag
+        value: "eeb8f24"
+  templates:
+    - name: update-server-image
+      inputs:
+        parameters:
+          - name: image-tag
+      container:
+        image: omarkalloush/deployment-container:latest
+        securityContext:
+              runAsNonRoot: false
+              runAsUser: 0
+              runAsGroup: 0
+              readOnlyRootFilesystem: false
+        command: [sh, -c]
+        args:
+          - |-
+              until git clone https://ArgoCloudDeployer:$(cat /tmp/github-creds/password)@github.com/omarkalloush/argocd.git; do sleep 3; done;
+
+              cd argocd
+              ls -la
+
+              gh auth login --with-token < /tmp/github-creds/password
+              gh auth setup-git
+              git config user.name "ArgoCloudDeployer"
+              git config user.email "amr8210301@ju.edu.jo"
+              IMAGE_TAG="{{inputs.parameters.image-tag}}"
+              FILE=helm_nginx/values.yaml
+
+              git switch -c ${IMAGE_TAG}
+
+              sed -i "s/node_app:.*/node_app:${IMAGE_TAG}/g" ${FILE}
+
+              git add ${FILE}
+              git status | tail -1 | grep 'nothing to commit' && exit 0
+              git commit -m "Automated :: Upgrade Node application to image tag ${IMAGE_TAG}"
+              git push -u origin ${IMAGE_TAG}
+
+              AUTOMERGE_PR_NUMBER=$(gh pr create --title "Automated :: Upgrade Node application to image tag ${IMAGE_TAG}" -b "Automated :: Upgrade Node application to image tag ${IMAGE_TAG}")
+              AUTOMERGE_PR_NUMBER=${AUTOMERGE_PR_NUMBER##*/}
+
+              gh pr merge -ds --admin ${AUTOMERGE_PR_NUMBER}
+
+
+        volumeMounts:
+        - name: github-creds
+          mountPath: /tmp/github-creds
+      volumes:
+      - name: github-creds
+        secret:
+          secretName: github-creds

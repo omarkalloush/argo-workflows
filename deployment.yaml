@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: deployment
+spec:
+  serviceaccountName: argo
+  entrypoint: deployment
+  templates:
+    - name: deployment
+      steps:
+        - - name: build-and-push
+            templateRef:
+              name: build-and-push
+              template: build-and-push
+              clusterScope: false
+
+        - - name: update-server-image
+            templateRef:
+              name: update-server-image
+              template: update-server-image
+              clusterScope: false
+            arguments:
+              parameters:
+                - name: image-tag
+                  value: "{{steps.build-and-push.outputs.parameters.image-tag}}"
